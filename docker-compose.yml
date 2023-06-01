@@ -1,0 +1,49 @@
+version: '3.7'
+services:
+  kafka:
+    image: wurstmeister/kafka
+    ports:
+      - '9092:9092'
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: localhost
+      KAFKA_CREATE_TOPICS: "hashedTokens:1:1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - my-network
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - '2181:2181'
+    networks:
+      - my-network
+
+  redis:
+    image: redis
+    ports:
+      - '6379:6379'
+    networks:
+      - my-network
+  
+  go-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+      - redis
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_ADDR=redis:6379
+    networks:
+      - my-network
+  
+networks:
+  my-network:
+    driver: bridge
