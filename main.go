@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -47,7 +48,7 @@ func gSend(producer sarama.SyncProducer, tickCh <-chan bool, wg *sync.WaitGroup)
 		if err != nil {
 			log.Println("Failed to send message to Kafka:", err)
 		} else {
-			log.Println("Sent message to Kafka:", string(jsonData))
+			log.Println("Sent message to Kafka:", message.Timeout, "seconds")
 			messageCount++
 		}
 	}
@@ -69,7 +70,8 @@ func gRecv(consumer sarama.Consumer, wg *sync.WaitGroup) {
 			continue
 		}
 
-		log.Println("Received message from Kafka:", string(message.Value))
+		log.Println("Received message from Kafka:", msg.Data)
+		fmt.Println("------------------------------------------------------------")
 	}
 }
 
@@ -101,6 +103,8 @@ func main() {
 	}
 	defer producer.Close()
 
+	config = sarama.NewConfig()
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 	consumer, err := sarama.NewConsumer([]string{"localhost:9092"}, config)
 	if err != nil {
 		log.Fatal("Failed to set up Kafka consumer:", err)
