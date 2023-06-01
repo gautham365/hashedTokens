@@ -22,11 +22,11 @@ type Message struct {
 	Timeout  int    `json:"timeout"`
 }
 
-func gSend(producer sarama.SyncProducer, wg *sync.WaitGroup) {
+func gSend(producer sarama.SyncProducer, tickCh <-chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	messageCount := 0
 
-	for {
+	for range tickCh {
 		message := Message{
 			Datetime: time.Now().UTC().String(),
 			Data:     messageCount,
@@ -50,8 +50,6 @@ func gSend(producer sarama.SyncProducer, wg *sync.WaitGroup) {
 			log.Println("Sent message to Kafka:", string(jsonData))
 			messageCount++
 		}
-
-		time.Sleep(time.Duration(message.Timeout) * time.Second)
 	}
 }
 
@@ -75,7 +73,7 @@ func gRecv(consumer sarama.Consumer, wg *sync.WaitGroup) {
 	}
 }
 
-func gTick(redisClient *redis.Client, wg *sync.WaitGroup) {
+func gTick(redisClient *redis.Client, tickCh chan<- bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		timeout := getRandomTimeout()
@@ -86,19 +84,20 @@ func gTick(redisClient *redis.Client, wg *sync.WaitGroup) {
 			log.Println("Set Redis timeout:", timeout, "seconds")
 		}
 
+		// Send tick signal to gSend
+		tickCh <- true
+
 		time.Sleep(time.Duration(timeout) * time.Second)
 	}
 }
 
 func main() {
 	// Set up Kafka producer and consumer
-x:
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true
 	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, config)
 	if err != nil {
-		log.Println("Failed to set up Kafka producer:", err)
-		goto x
+		log.Fatal("Failed to set up Kafka producer:", err)
 	}
 	defer producer.Close()
 
@@ -118,17 +117,23 @@ x:
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// Create tick channel
+	tickCh := make(chan bool)
+
 	// gSend: goroutine to send data into Kafka
-	go gSend(producer, &wg)
+	go gSend(producer, tickCh, &wg)
 
 	// gRecv: goroutine to receive data from Kafka
 	go gRecv(consumer, &wg)
 
 	// gTick: goroutine to set random timeouts in Redis
-	go gTick(redisClient, &wg)
+	go gTick(redisClient, tickCh, &wg)
 
 	// Wait for goroutines to finish
 	wg.Wait()
+
+	// Close tick channel after all goroutines have finished
+	close(tickCh)
 }
 
 func getRandomTimeout() int {
